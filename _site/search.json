@@ -12,5 +12,12 @@
     "title": "ISSS608-VAA",
     "section": "",
     "text": "This is a Quarto website.wweddd\nTo learn more about Quarto websites visit https://quarto.org/docs/websites.\n\n1 + 1\n\n[1] 2"
+  },
+  {
+    "objectID": "Hands-on-Exercise1/Exercise01/Hands-on_Ex01.html",
+    "href": "Hands-on-Exercise1/Exercise01/Hands-on_Ex01.html",
+    "title": "Hands-on Exercise1",
+    "section": "",
+    "text": "pacman::p_load(tidyverse)\n\n\nImporting the data\n\nexam_data &lt;- read_csv(\"data/Exam_data.csv\")\n\nRows: 322 Columns: 7\n── Column specification ────────────────────────────────────────────────────────\nDelimiter: \",\"\nchr (4): ID, CLASS, GENDER, RACE\ndbl (3): ENGLISH, MATHS, SCIENCE\n\nℹ Use `spec()` to retrieve the full column specification for this data.\nℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.\n\n\n\n\nPlotting a simple bar chart"
   }
 ]
