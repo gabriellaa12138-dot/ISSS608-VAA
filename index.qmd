@@ -1,11 +1,131 @@
 ---
-title: "ISSS608-VAA"
+title: "Hands-on_Exercise2"
 ---
 
-This is a Quarto website.**wweddd**
+# Overview
 
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
+**Summary:** This section introduces the main goals of the chapter. It tells us we will learn extensions for `ggplot2`. We will learn how to fix overlapping labels, use professional themes, and combine many plots into one figure.
+
+## 1 Preparation
 
 ```{r}
-1 + 1
+pacman::p_load(ggrepel, patchwork, 
+               ggthemes,
+               tidyverse) 
+
+```
+
+```{r}
+remotes::install_git("https://codeberg.org/hrbrmstr/hrbrthemes.git")
+```
+
+```{r setup, include=FALSE}
+library(tidyverse)   
+library(hrbrthemes)  
+library(ggrepel)     
+library(patchwork)   
+```
+
+```{r}
+exam_data <- read_csv("Hands-on-Exercise2/data/Exam_data.csv")
+```
+
+## **2.3 ggrepel**
+
+**This section solves a big problem: overlapping text. When we use geom_text, labels cover each other. The package ggrepel fixes this automatically.I can change the box.padding argument. This controls the space around the labels. I can also change the color of the labels to match the data points, making it look more organized.**
+
+```{r}
+ggplot(data=exam_data, 
+       aes(x= MATHS, 
+           y=ENGLISH)) +
+  geom_point() +
+  geom_smooth(method=lm, 
+              size=0.5) +  
+  geom_label_repel(aes(label = ID), 
+                   fontface = "bold") +
+  coord_cartesian(xlim=c(0,100),
+                  ylim=c(0,100)) +
+  ggtitle("English scores versus Maths scores for Primary 3")
+```
+
+## 2.4.1 ggtheme package
+
+**This section introduces built-in themes like `theme_gray()` and external themes like `theme_economist()` and `theme_ipsum()`. These themes change the background, fonts, and grid lines.**
+
+```{r}
+ggplot(data=exam_data, 
+             aes(x = MATHS)) +
+  geom_histogram(bins=20, 
+                 boundary = 100,
+                 color="grey25", 
+                 fill="powderblue") +
+  theme_gray() +
+  ggtitle("Distribution of Maths scores") 
+```
+
+## 2.4.2 hrbthemes
+
+```{r}
+ggplot(data=exam_data, 
+             aes(x = MATHS)) +
+  geom_histogram(bins=20, 
+                 boundary = 100,
+                 color="grey25", 
+                 fill="lightblue") +
+  ggtitle("Distribution of Maths scores") +
+  theme_ipsum(axis_title_size = 18,
+              base_size = 15,
+              grid = "Y")
+```
+
+## 2.5 Beyond Single Graph
+
+**Sometimes one chart is not enough. This section teaches patchwork. We can use +, /, and () to arrange multiple charts (side-by-side or stacked)**
+
+graph1: single graph of math grade
+
+```{r}
+p1 <-ggplot(data=exam_data, 
+             aes(x = MATHS)) +
+  geom_histogram(bins=20, 
+                 boundary = 100,
+                 color="grey25", 
+                 fill="grey90") + 
+  coord_cartesian(xlim=c(0,100)) +
+  ggtitle("Distribution of Maths scores")
+```
+
+graph1: single graph of english grade
+
+```{r}
+p2 <- ggplot(data=exam_data, 
+             aes(x = ENGLISH)) +
+  geom_histogram(bins=20, 
+                 boundary = 100,
+                 color="grey25", 
+                 fill="grey90") +
+  coord_cartesian(xlim=c(0,100)) +
+  ggtitle("Distribution of English scores")
+```
+
+```{r}
+p3 <- ggplot(data=exam_data, 
+             aes(x= MATHS, 
+                 y=ENGLISH)) +
+  geom_point() +
+  geom_smooth(method=lm, 
+              size=0.5) +  
+  coord_cartesian(xlim=c(0,100),
+                  ylim=c(0,100)) +
+  ggtitle("English scores versus Maths scores for Primary 3")
+```
+
+```{r}
+(p3|(p1 / p2) ) + 
+  plot_annotation(tag_levels = 'I')
+```
+
+```{r}
+patchwork <- (p1 / p2) | p3
+patchwork & theme_economist()
 ```
