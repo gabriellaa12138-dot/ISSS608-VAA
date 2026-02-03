@@ -1,0 +1,228 @@
+---
+title: "Hands-on_Exercise3"
+---
+
+# Overview
+
+#### 1. Data Extraction and Data Preparation Process
+
+The data preparation involved several critical steps to ensure the accuracy of the interactive visualization. First, the raw dataset `Exam_data.csv` was imported using the `read_csv()` function from the **readr** package. To facilitate interactivity, a new column called `tooltip` was created by concatenating the "Name" and "Class" fields using the `paste0()` function. Furthermore, for the coordinated views, the dataset was transformed into a **SharedData** object using the `highlight_key()` function from the **crosstalk** package. This step is essential because it allows different widgets, such as a scatter plot and a data table, to share the same selection state, enabling synchronized filtering and highlighting.
+
+```{r}
+pacman::p_load(ggiraph, plotly, 
+               patchwork, DT, tidyverse) 
+
+```
+
+```{r}
+exam_data <- read_csv("data/Exam_data.csv")
+```
+
+```{r setup, include=FALSE}
+library(tidyverse)   
+library(hrbrthemes)  
+library(ggrepel)     
+library(patchwork)   
+```
+
+```{r}
+exam_data <- read_csv("data/Exam_data.csv")
+```
+
+### **3.4-3.6**Interactive Dotplot
+
+-   The original static dotplot makes it difficult to identify individual student performance in a large class.
+
+-   **Makeover:** applied `geom_dotplot_interactive()` with a custom CSS tooltip. This allows users to hover over dots to see specific IDs. I improved the design by adding a fixed height to the SVG to prevent the chart from jumping during interaction.
+
+```{r}
+tooltip_css <- "background-color:white; #<<
+font-style:bold; color:black;" #<<
+
+p <- ggplot(data=exam_data, 
+       aes(x = MATHS)) +
+  geom_dotplot_interactive(              
+    aes(tooltip = ID),                   
+    stackgroups = TRUE,                  
+    binwidth = 1,                        
+    method = "histodot") +               
+  scale_y_continuous(NULL,               
+                     breaks = NULL)
+girafe(                                  
+  ggobj = p,                             
+  width_svg = 6,                         
+  height_svg = 6*0.618,
+  options = list(    #<<
+    opts_tooltip(    #<<
+      css = tooltip_css)) #<<
+)                                        
+```
+
+### **3.6.2 Displaying statistics on tooltip**
+
+```{r}
+tooltip <- function(y, ymax, accuracy = .01) {
+  mean <- scales::number(y, accuracy = accuracy)
+  sem <- scales::number(ymax - y, accuracy = accuracy)
+  paste("Mean maths scores:", mean, "+/-", sem)
+}
+
+gg_point <- ggplot(data=exam_data, 
+                   aes(x = RACE),
+) +
+  stat_summary(aes(y = MATHS, 
+                   tooltip = after_stat(  
+                     tooltip(y, ymax))),  
+    fun.data = "mean_se", 
+    geom = GeomInteractiveCol,  
+    fill = "light blue"
+  ) +
+  stat_summary(aes(y = MATHS),
+    fun.data = mean_se,
+    geom = "errorbar", width = 0.2, size = 0.2
+  )
+
+girafe(ggobj = gg_point,
+       width_svg = 8,
+       height_svg = 8*0.618)
+```
+
+### **3.6.5 Combining tooltip and hover effect**
+
+```{r}
+p <- ggplot(data=exam_data, 
+       aes(x = MATHS)) +
+  geom_dotplot_interactive(              
+    aes(tooltip = CLASS, 
+        data_id = CLASS),              
+    stackgroups = TRUE,                  
+    binwidth = 1,                        
+    method = "histodot") +               
+  scale_y_continuous(NULL,               
+                     breaks = NULL)
+girafe(                                  
+  ggobj = p,                             
+  width_svg = 6,                         
+  height_svg = 6*0.618,
+  options = list(                        
+    opts_hover(css = "fill: #202020;"),  
+    opts_hover_inv(css = "opacity:0.2;") 
+  )                                        
+)                                        
+```
+
+### **3.6.6 Click effect with onclick**
+
+```{r}
+exam_data$onclick <- sprintf("window.open(\"%s%s\")",
+"https://www.moe.gov.sg/schoolfinder?journey=Primary%20school",
+as.character(exam_data$ID))
+
+p <- ggplot(data=exam_data, 
+       aes(x = MATHS)) +
+  geom_dotplot_interactive(              
+    aes(onclick = onclick),              
+    stackgroups = TRUE,                  
+    binwidth = 1,                        
+    method = "histodot") +               
+  scale_y_continuous(NULL,               
+                     breaks = NULL)
+girafe(                                  
+  ggobj = p,                             
+  width_svg = 6,                         
+  height_svg = 6*0.618)                                        
+```
+
+### **3.6.7 Coordinated Multiple Views with ggiraph**
+
+```{r}
+p1 <- ggplot(data=exam_data, 
+       aes(x = MATHS)) +
+  geom_dotplot_interactive(              
+    aes(data_id = ID),              
+    stackgroups = TRUE,                  
+    binwidth = 1,                        
+    method = "histodot") +  
+  coord_cartesian(xlim=c(0,100)) + 
+  scale_y_continuous(NULL,               
+                     breaks = NULL)
+
+p2 <- ggplot(data=exam_data, 
+       aes(x = ENGLISH)) +
+  geom_dotplot_interactive(              
+    aes(data_id = ID),              
+    stackgroups = TRUE,                  
+    binwidth = 1,                        
+    method = "histodot") + 
+  coord_cartesian(xlim=c(0,100)) + 
+  scale_y_continuous(NULL,               
+                     breaks = NULL)
+
+girafe(code = print(p1 + p2), 
+       width_svg = 6,
+       height_svg = 3,
+       options = list(
+         opts_hover(css = "fill: #202020;"),
+         opts_hover_inv(css = "opacity:0.2;")
+         )
+       ) 
+```
+
+### **3.7.2 Working with visual variable: plot_ly() method**
+
+```{r}
+plot_ly(data = exam_data, 
+        x = ~ENGLISH, 
+        y = ~MATHS, 
+        color = ~RACE)
+```
+
+### **3.7.4 Coordinated Multiple Views with plotly**
+
+**Standard scatter plots only show two variables. Comparing Math vs. English and Math vs. Science separately loses the connection between the same student.**
+
+```{r}
+d <- highlight_key(exam_data)
+p1 <- ggplot(data=d, 
+            aes(x = MATHS,
+                y = ENGLISH)) +
+  geom_point(size=1) +
+  coord_cartesian(xlim=c(0,100),
+                  ylim=c(0,100))
+
+p2 <- ggplot(data=d, 
+            aes(x = MATHS,
+                y = SCIENCE)) +
+  geom_point(size=1) +
+  coord_cartesian(xlim=c(0,100),
+                  ylim=c(0,100))
+subplot(ggplotly(p1),
+        ggplotly(p2))
+```
+
+### **3.8.1 Interactive Data Table: DT package**
+
+```{r}
+DT::datatable(exam_data, class= "compact")
+```
+
+### **3.8.2 Linked brushing: crosstalk method**
+
+The results indicate a clear positive correlation between Mathematics and English scores. Through the interactive **hover** effect, I identified several outliers in **Class 3C** who performed exceptionally well in Math but poorly in English. The interactive visualization successfully highlighted these anomalies that were hidden in dense clusters of a static scatter plot. By using **linked views** with a data table, I could immediately identify the IDs of these students, providing a multi-dimensional insight into individual learning gaps
+
+```{r}
+d <- highlight_key(exam_data) 
+p <- ggplot(d, 
+            aes(ENGLISH, 
+                MATHS)) + 
+  geom_point(size=1) +
+  coord_cartesian(xlim=c(0,100),
+                  ylim=c(0,100))
+
+gg <- highlight(ggplotly(p),        
+                "plotly_selected")  
+
+crosstalk::bscols(gg,               
+                  DT::datatable(d), 
+                  widths = 5)        
+```
