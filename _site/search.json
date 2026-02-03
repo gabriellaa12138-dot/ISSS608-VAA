@@ -1,12 +1,5 @@
 [
   {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Hands-on_Exercise",
-    "section": "",
-    "text": "From Hands-on_exercise3, i linked every week hands-on exercise at dropdown menu."
-  },
-  {
     "objectID": "Hands-on-Exercise4/Hands-on_Ex04.html",
     "href": "Hands-on-Exercise4/Hands-on_Ex04.html",
     "title": "Hands-on-exercise4",
@@ -40,6 +33,13 @@
     "title": "Hands-on Exercise1",
     "section": "",
     "text": "pacman::p_load(tidyverse)\n\n\nImporting the data\n\nexam_data &lt;- read_csv(\"data/Exam_data.csv\")\n\n\n\nPlotting a simple bar chart"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Hands-on_Exercise",
+    "section": "",
+    "text": "From Hands-on_exercise3, i linked every week hands-on exercise at dropdown menu."
   },
   {
     "objectID": "Hands-on-Exercise3/Hands-on_Ex03.html",
