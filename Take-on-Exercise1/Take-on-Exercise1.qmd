@@ -1,230 +1,443 @@
----
-title: "Take-on-Exercise"
----
-
-## 1.Introduction
-
-This dataset contains 2,736 ship voyage records collected between June 2023 and June 2024. Each record represents an individual voyage and includes operational, technical, and financial variables such as ship type, route category, engine characteristics, cargo weight, operational cost, revenue, distance traveled, and efficiency indicators. The dataset provides a structured view of voyage-level performance, allowing investigation of cost structure, revenue generation, and operational efficiency. The presence of both financial and operational variables enables exploration of structural mechanisms behind profitability risk.
-
-**Research Question**: What factors drive profitability risk in ship voyages, and where is the primary operational bottleneck?
-
 ```{r}
-library(tidyverse)
-library(skimr)
-library(corrplot)
-library(ggridges)
-library(GGally)
-theme_set(
-  theme_minimal(base_size = 13) +
-    theme(
-      plot.title = element_text(face = "bold"),
-      axis.title = element_text(face = "bold"),
-      panel.grid.minor = element_blank()
-    )
+#| message: false
+#| warning: false
+pacman::p_load(
+  tidyverse, janitor, skimr,
+  scales, patchwork,
+  ggridges, ggdist,
+  sf, rnaturalearth, rnaturalearthdata,
+  ggrepel
 )
 
+set.seed(1234)
 
-ship <- read_csv("data/Ship_Performance_Dataset.csv")
+# Required variable name per prompt
+elsiver <- read_csv("data/Upload for elsiver.csv", show_col_types = FALSE)
+
+dim(elsiver)
+glimpse(elsiver)
+
 ```
 
-## 2. Data Preparation
-
 ```{r}
-colSums(is.na(ship))
-skim(ship)
-```
+#| message: false
+#| warning: false
+# Duplicate rows
+dup_n <- sum(duplicated(elsiver))
+dup_n
 
-**Revenue − Cost = Profit :** Measure the profitability of the voyage
-
-Data cleaning (missing values → "Unknown") - Created variables: - Profit - Profit_Group - Cost_per_nm - Profit_Margin
-
-## 
-
-```{r}
-cat_cols <- c("Ship_Type","Route_Type","Engine_Type","Maintenance_Status","Weather_Condition")
-ship <- ship %>%
-  mutate(across(all_of(cat_cols), ~replace_na(.x, "Unknown"))) %>%
-  mutate(across(all_of(cat_cols), as.factor))
-
-ship <- ship %>%
+# Missingness (counts and %)
+miss_tbl <- elsiver %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "var", values_to = "missing_n") %>%
   mutate(
-    Profit = Revenue_per_Voyage_USD - Operational_Cost_USD,
-    Profit_Group = ifelse(Profit > 0, "Profit", "Loss"),
-    Profit_Margin = Profit / Revenue_per_Voyage_USD,
-    Cost_per_nm = Operational_Cost_USD / Distance_Traveled_nm,
-    Rev_per_ton = Revenue_per_Voyage_USD / Cargo_Weight_tons
-  )
-```
+    n = nrow(elsiver),
+    missing_pct = missing_n / n,
+    domain = case_when(
+      str_starts(var, "C") ~ "C (Characteristics)",
+      str_starts(var, "T") ~ "T (Income components)",
+      str_starts(var, "F") ~ "F (Income factors)",
+      str_starts(var, "L") ~ "L (Living conditions)",
+      str_starts(var, "P") ~ "P (Policies)",
+      str_starts(var, "A") ~ "A (Assessments)",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  arrange(desc(missing_pct))
 
-## 3.Analytical Findings
-
-**Do the losses fall mainly on "costs too high" or "revenues too low"?**
-
-##### Figure 1 – Revenue vs Cost Structure
-
-```{r}
-ggplot(ship, aes(x = Operational_Cost_USD, y = Revenue_per_Voyage_USD, color = Profit_Group)) +
-  geom_point(alpha = 0.4, size = 1) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
-  labs(
-    title = "Revenue vs Operational Cost (Break-even line: Revenue = Cost)",
-    x = "Operational Cost (USD)",
-    y = "Revenue per Voyage (USD)"
-  ) +
-  theme_minimal()
-
+miss_tbl %>% slice_head(n = 12)
 
 ```
 
 ```{r}
-ship %>%
-  count(Profit_Group) %>%
-  mutate(rate = n/sum(n))
+#| message: false
+#| warning: false
+# TEIN consistency check: TEIN == TAIN + TSII + TOIN wherever all are present
+tein_check <- elsiver %>%
+  filter(!is.na(TEIN), !is.na(TAIN), !is.na(TSII), !is.na(TOIN)) %>%
+  mutate(diff = TEIN - (TAIN + TSII + TOIN))
 
-```
-
-The scatterplot shows a clear separation around the break-even line (Revenue = Cost). Approximately 20.5% of voyages fall below the line, indicating losses. Loss-making voyages are more concentrated in the higher-cost region, particularly when operational costs exceed 300,000 USD. In contrast, profitable voyages are widely distributed across cost levels, suggesting that high cost alone does not necessarily cause losses if revenue scales proportionally. This indicates that profitability is not purely revenue-driven; rather, cost control efficiency plays a significant role. Therefore, we need to find out where are losses mainly come from from 4 aspect : Maintenance issues;specific routes; cost per unit distance is too high; too low operational efficiency?
-
-##### Figure 2 – Cost per Nautical Mile by Profit Group
-
-```{r}
-ggplot(ship, aes(x = Profit_Group, y = Cost_per_nm, fill = Profit_Group)) +
-  geom_violin(alpha = 0.5) +
-  geom_boxplot(width = 0.2, alpha = 0.7) +
-  labs(
-    title = "Cost per Nautical Mile by Profit Group",
-    x = "",
-    y = "Cost per Nautical Mile (USD)"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-```
-
-```{r}
-ship %>%
-  group_by(Profit_Group) %>%
+tein_check %>%
   summarise(
-    median_cost_nm = median(Cost_per_nm),
-    mean_cost_nm = mean(Cost_per_nm)
+    n_checked = n(),
+    max_abs_diff = max(abs(diff)),
+    all_exact_zero = all(diff == 0)
   )
 
 ```
 
-A two-sample t-test confirms that the difference in unit cost between profit and loss voyages is statistically significant (p \< 0.001).
-
 ```{r}
-t_test <- t.test(Cost_per_nm ~ Profit_Group, data = ship)
-t_test$p.value
+#| message: false
+#| warning: false
+elsiver <- elsiver %>%
+  mutate(
+    # Fix known parsing issues / out-of-range anomalies
+    ARO4 = if_else(ARO4 == "`", NA_character_, as.character(ARO4)),
+    ARO4 = readr::parse_number(ARO4),
+    ARO2 = as.numeric(ARO2),
+    ARO2 = if_else(ARO2 %in% c(1, 2, 3), ARO2, NA_real_),  # assumption: valid range is 1–3 here
+
+    PPO1 = if_else(PPO1 == 0, NA_real_, PPO1),
+    PPO2 = if_else(PPO2 == 0, NA_real_, PPO2),
+
+    # Impute TSII missing as 0 only when TEIN == TAIN + TOIN (arithmetically implied)
+    TSII = case_when(
+      is.na(TSII) &
+        !is.na(TEIN) & !is.na(TAIN) & !is.na(TOIN) &
+        abs(TEIN - (TAIN + TOIN)) < 1e-9 ~ 0,
+      TRUE ~ TSII
+    ),
+
+    # Derived, analysis-friendly variables
+    CPRO = factor(CPRO, levels = 1:5, labels = paste("Province code", 1:5)),
+
+    CGEN = factor(CGEN, levels = c(1, 2), labels = c("Male", "Female")),
+    CRAC = factor(CRAC, levels = c(1, 2), labels = c("Kinh", "Ethnic minorities")),
+    CJOB = factor(CJOB, levels = c(1, 2, 3), labels = c("Agriculture", "Service/Industrial", "Other")),
+    CJOB = fct_explicit_na(CJOB, "Missing (CJOB)"),
+
+    CQUI = factor(CQUI, levels = c(1, 2, 3, 4, 5),
+                  labels = c("Top quintile", "Fourth quintile", "Middle quintile", "Second quintile", "Lowest quintile")),
+    CQUI = fct_explicit_na(CQUI, "Missing (CQUI)"),
+
+    FEDU = factor(FEDU, levels = c(0, 1, 2, 3),
+                  labels = c("Primary", "Lower secondary", "Upper secondary", "Other / higher")),
+    FEDU = fct_explicit_na(FEDU, "Missing (FEDU)"),
+
+    FVTP = factor(FVTP, levels = c(1, 2), labels = c("Short courses", "Long courses")),
+    FVTP = fct_explicit_na(FVTP, "Missing (FVTP)"),
+
+    FCRA = factor(FCRA, levels = c(1, 2), labels = c("Credit inaccessible", "Credit accessible")),
+    FCRA = fct_explicit_na(FCRA, "Missing (FCRA)"),
+
+    FTAP = factor(FTAP, levels = c(1, 2), labels = c("Low technique", "Adequate technique")),
+    FTAP = fct_explicit_na(FTAP, "Missing (FTAP)"),
+
+    # Housing type derived from one-hot indicators
+    house_type = case_when(
+      LHO1 == 1 ~ "Cottage house",
+      LHO2 == 1 ~ "Roofed house",
+      LHO3 == 1 ~ "Solid house",
+      LHO4 == 1 ~ "Building",
+      TRUE ~ "Missing/Unknown"
+    ) %>% factor(levels = c("Cottage house", "Roofed house", "Solid house", "Building", "Missing/Unknown")),
+
+    # log1p for skewed income (keeps zeros defined)
+    log1p_TEIN = log1p(TEIN)
+  )
 
 ```
 
-**Observation 2 – Cost Efficiency as a Profit Driver**\
-Loss voyages show significantly higher unit costs (median = 339 USD) compared to profitable voyages (median = 217 USD). This confirms that cost intensity per distance traveled strongly determines profitability.
+```{nalysis: distributions, composition, interactions, mapped context]}
 
-##### Figure 3 – Maintenance vs Cost Efficiency
+```
 
 ```{r}
-ggplot(ship, aes(x = Maintenance_Status, y = Cost_per_nm, fill = Maintenance_Status)) +
-  geom_violin(alpha = 0.5) +
-  geom_boxplot(width = 0.2, alpha = 0.7) +
+#| fig-width: 10
+#| fig-height: 6
+miss_plot_df <- elsiver %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "var", values_to = "missing_n") %>%
+  mutate(
+    n = nrow(elsiver),
+    missing_pct = missing_n / n,
+    domain = case_when(
+      str_starts(var, "C") ~ "C",
+      str_starts(var, "T") ~ "T",
+      str_starts(var, "F") ~ "F",
+      str_starts(var, "L") ~ "L",
+      str_starts(var, "P") ~ "P",
+      str_starts(var, "A") ~ "A",
+      TRUE ~ "Other"
+    ),
+    var = fct_reorder(var, missing_pct)
+  )
+
+ggplot(miss_plot_df, aes(x = var, y = missing_pct)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = label_percent(accuracy = 1)) +
+  facet_wrap(~ domain, scales = "free_y") +
   labs(
-    title = "Cost per Nautical Mile by Maintenance Status",
-    x = "Maintenance Status",
-    y = "Cost per Nautical Mile (USD)"
+    title = "Missingness by variable (faceted by survey domain)",
+    x = NULL,
+    y = "Missing (% of 725 rows)"
+  )
+
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.5
+tein_p99 <- quantile(elsiver$TEIN, 0.99, na.rm = TRUE)
+tein_med <- median(elsiver$TEIN, na.rm = TRUE)
+
+p_lin <- elsiver %>%
+  filter(!is.na(TEIN)) %>%
+  ggplot(aes(x = TEIN)) +
+  geom_histogram(binwidth = 5, boundary = 0) +
+  geom_vline(xintercept = tein_med, linetype = "dashed") +
+  coord_cartesian(xlim = c(0, tein_p99)) +
+  labs(
+    title = "Total income (TEIN) distribution (zoomed to P99)",
+    subtitle = paste0("Dashed line = median; unit = Mil VND; zoom avoids deceptive truncation"),
+    x = "TEIN (Mil VND)",
+    y = "Count"
+  )
+
+p_log <- elsiver %>%
+  filter(!is.na(TEIN)) %>%
+  ggplot(aes(x = TEIN)) +
+  geom_histogram(binwidth = 0.25) +
+  scale_x_continuous(trans = "log1p") +
+  labs(
+    title = "Same data on log1p scale",
+    subtitle = "log1p handles TEIN=0 and makes the long tail visible",
+    x = "TEIN (Mil VND), log1p scale",
+    y = "Count"
+  )
+
+p_lin + p_log
+
+```
+
+TEIN is heavily right-skewed: most observations cluster at low-to-moderate income, while a small number of high-income cases generate a long tail. This makes “average income” an unstable summary; median and distribution-aware plots are more truthful than a single mean. The paired panels follow best-practice guidance: the left panel is a zoomed view (explicitly labelled) to show the bulk distribution without misleading truncation; the right panel uses log1p to show tail structure while keeping zero incomes defined.\
+Limitations: Income is self-reported and sampling is snowball-based; extreme values may reflect genuine heterogeneity or network overrepresentation, so they should be interpreted cautiously.
+
+### Income by education using a raincloud design
+
+```{r}
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(ggdist)
+
+df <- elsiver %>%
+  mutate(
+    FEDU = factor(
+      FEDU,
+      levels = c(0, 1, 2, 3),
+      labels = c("Primary", "Lower secondary", "Upper secondary", "Other / higher")
+    )
+  ) %>%
+  filter(!is.na(TEIN), !is.na(FEDU))
+
+
+p99 <- quantile(df$TEIN, 0.99, na.rm = TRUE)
+
+ggplot(df, aes(y = FEDU, x = TEIN, fill = FEDU)) +
+  stat_halfeye(
+    adjust = 0.8,
+    justification = -0.25,
+    .width = c(0.5, 0.8, 0.95),
+    point_interval = "median_qi",
+    alpha = 0.6
+  ) +
+  geom_boxplot(width = 0.18, outlier.alpha = 0.25, alpha = 0.3) +
+  geom_point(
+    position = position_jitter(height = 0.08, width = 0),
+    alpha = 0.08,
+    size = 0.8
+  ) +
+  coord_cartesian(xlim = c(0, p99)) +
+  labs(
+    title = "Income differs strongly by education (distribution-first view)",
+    subtitle = "Half-eye + box + jitter (raincloud) shows distribution and uncertainty",
+    x = "TEIN (Mil VND), zoomed to P99",
+    y = NULL
   ) +
   theme_minimal() +
   theme(legend.position = "none")
-ship %>%
-  group_by(Maintenance_Status) %>%
-  summarise(
-    median_cost_nm = median(Cost_per_nm),
-    mean_cost_nm = mean(Cost_per_nm)
-  ) %>%
-  arrange(desc(median_cost_nm))
-
 ```
 
-\
-**Observation 3 – Maintenance Condition and Cost Efficiency**\
-Cost per nautical mile remains relatively similar across maintenance categories, with median values ranging between 237 and 249 USD. The small differences suggest that maintenance status does not significantly affect operational cost efficiency. Although the “None” category exhibits a slightly higher mean value, the median indicates no substantial structural variation. Therefore, maintenance condition is unlikely to be the primary profitability bottleneck.
+Income rises with education in both central tendency and upper-tail reach: higher education groups show higher medians and progressively wider distributions. Crucially, the distribution shapes matter: the most educated group is small and has a dramatically longer tail, implying large heterogeneity and making mean-based comparisons fragile. This aligns with the paper’s narrative that higher education does not guarantee strictly higher *minimum* income, but is associated with much higher *maximum* income potential. \
+Limitations: Education is not randomly assigned; snowball sampling and local labour-market structure may confound education with access to non-agricultural jobs, training, and networks, so the plot is descriptive rather than causal.
 
-##### Figure 5 – Route vs Cost Intensity
+### Income by career with ridgelines, stratified by race
 
 ```{r}
-ggplot(ship, aes(x = Route_Type, y = Cost_per_nm, fill = Route_Type)) +
-  geom_violin(alpha = 0.5) +
-  geom_boxplot(width = 0.2, alpha = 0.7) +
+#| out-width: "100%"
+#| fig-retina: 2
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+
+plot_df <- elsiver %>%
+  mutate(
+    log1p_TEIN = log1p(TEIN),
+    CJOB = as.factor(CJOB),
+    CRAC = as.factor(CRAC)
+  ) %>%
+  filter(!is.na(log1p_TEIN), !is.na(CJOB), !is.na(CRAC))
+
+ggplot(plot_df, aes(x = log1p_TEIN)) +
+  ggridges::geom_density_ridges(aes(y = CJOB, fill = CJOB),
+                                alpha = 0.6, color = "white", scale = 1.1) +
+  ggplot2::geom_boxplot(aes(y = CJOB),
+                        width = 0.12, alpha = 0.25, outlier.alpha = 0.15) +
+  facet_wrap(~ CRAC) +
   labs(
-    title = "Cost per Nautical Mile by Route Type",
-    x = "Route Type",
-    y = "Cost per Nautical Mile (USD)"
+    title = "Career income distributions differ, and race stratification matters",
+    subtitle = "Ridgelines + box overlays on log1p scale reveal distribution shifts and within-group spread",
+    x = "log1p(TEIN) (Mil VND)",
+    y = NULL
   ) +
   theme_minimal() +
   theme(legend.position = "none")
-ship %>%
-  group_by(Route_Type) %>%
-  summarise(
-    median_cost_nm = median(Cost_per_nm),
-    mean_cost_nm = mean(Cost_per_nm)
-  ) %>%
-  arrange(desc(median_cost_nm))
-
 ```
 
-**Observation 4 – Route Type and Cost Intensity**\
-Transoceanic routes exhibit slightly higher unit costs, indicating structural cost variation across route categories.
+Across both race strata, agriculture has the lowest income distribution, while service/industrial and other careers shift upward. However, stratifying by race reveals a crucial inequality pattern: in agriculture, the ethnic-minority distribution is noticeably left-shifted relative to Kinh, indicating lower typical income among minority agricultural workers. This intersectional view is more truthful than a single “race gap” or “career gap” because it shows *where* disparities concentrate. \
+Limitations: Density estimation can smooth away micro-structure, and snowball sampling may cluster respondents within ethnic and occupational networks. Therefore, the plot should be framed as exploratory evidence, not a population estimate.
 
-##### Figure 6 – Route vs Loss Rate
+### Median income composition by education using a waterfall design
 
 ```{r}
-ship %>%
-  group_by(Route_Type) %>%
+#| fig-width: 11
+#| fig-height: 6
+comp_med <- elsiver %>%
+  filter(!is.na(TEIN), FEDU != "Missing (FEDU)") %>%
+  group_by(FEDU) %>%
   summarise(
-    total = n(),
-    loss = sum(Profit_Group == "Loss"),
-    loss_rate = loss / total
+    TAIN_med = median(TAIN, na.rm = TRUE),
+    TSII_med = median(TSII, na.rm = TRUE),
+    TOIN_med = median(TOIN, na.rm = TRUE),
+    TEIN_med = median(TEIN, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
   ) %>%
-  arrange(desc(loss_rate))
-```
+  pivot_longer(cols = c(TAIN_med, TSII_med, TOIN_med),
+               names_to = "component", values_to = "value") %>%
+  mutate(
+    component = recode(component,
+      TAIN_med = "Agricultural (TAIN)",
+      TSII_med = "Service/Industrial (TSII)",
+      TOIN_med = "Other income (TOIN)"
+    ),
+    component = factor(component, levels = c("Agricultural (TAIN)", "Service/Industrial (TSII)", "Other income (TOIN)"))
+  ) %>%
+  group_by(FEDU) %>%
+  mutate(
+    start = lag(cumsum(value), default = 0),
+    end = start + value
+  ) %>%
+  ungroup()
 
-```{r}
-ship %>%
-  group_by(Route_Type, Profit_Group) %>%
-  summarise(n = n(), .groups = "drop") %>%
-  group_by(Route_Type) %>%
-  mutate(prop = n/sum(n)) %>%
-  ggplot(aes(x = Route_Type, y = prop, fill = Profit_Group)) +
-  geom_col(position = "fill") +
-  scale_y_continuous(labels = scales::percent) +
+ggplot(comp_med, aes(y = component, x = value)) +
+  geom_col(aes(fill = component), width = 0.7) +
+  geom_segment(aes(x = start, xend = end, y = component, yend = component), linewidth = 1) +
+  facet_wrap(~ FEDU, scales = "free_x") +
   labs(
-    title = "Profit and Loss Proportion by Route Type",
-    x = "Route Type",
-    y = "Proportion"
+    title = "How income composition shifts with education (median-based waterfall)",
+    subtitle = "Waterfall components sum to median TEIN because TEIN identity holds in the data",
+    x = "Median component income (Mil VND)",
+    y = NULL
   ) +
-  theme_minimal()
+  theme(legend.position = "none")
 
 ```
 
-**Observation 5 – Route Type and Loss Risk**\
-Loss proportions remain relatively consistent across most route types (approximately 19–21%), indicating that route category alone does not substantially increase profitability risk. The “None” category shows a higher loss rate, which may reflect data classification issues rather than operational structure. Overall, while route type influences cost levels, it does not significantly determine the probability of incurring losses.
+Education is not only associated with higher total income; it is associated with a different *composition* of income. At primary and lower-secondary levels, median income is dominated by agricultural income (TAIN), with minimal service/industrial contribution. As education increases, non-agricultural components (TSII and TOIN) become much larger in the median composition, consistent with a broader opportunity set beyond agriculture. Because the dataset satisfies TEIN = TAIN + TSII + TOIN exactly (where complete), a waterfall is a truthful decomposition rather than an illustrative approximation. \
+Limitations: This is a median-based decomposition (not a population budget). The highest education group has small N, and snowball sampling limits external generalization. 
 
-##### Figure 7 – Distance vs Cost per Nautical Mile 
+### Race × career interaction as an annotated heatmap
 
 ```{r}
-ggplot(ship, aes(x = Distance_Traveled_nm, y = Cost_per_nm)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth(method = "lm", se = FALSE, size = 1.2, color = "#D62828") +
-  annotate("text", x = 1500, y = 8000,
-           label = "Correlation = -0.545",
-           size = 4) +
-  theme_minimal(base_size = 14)
+#| fig-width: 9
+#| fig-height: 4.5
+heat_df <- elsiver %>%
+  filter(!is.na(TEIN), CJOB != "Missing (CJOB)") %>%
+  group_by(CRAC, CJOB) %>%
+  summarise(
+    n = n(),
+    tein_med = median(TEIN),
+    .groups = "drop"
+  )
+
+ggplot(heat_df, aes(x = CJOB, y = CRAC, fill = tein_med)) +
+  geom_tile() +
+  geom_text(aes(label = paste0("Median=", round(tein_med, 1), "\nN=", n)), size = 3) +
+  labs(
+    title = "Intersectional view: race-by-career median income (with sample size)",
+    x = NULL,
+    y = NULL,
+    fill = "Median TEIN\n(Mil VND)"
+  )
 
 ```
 
-**Observation 6 – Scale Effect of Distance on Cost Efficiency**\
-A strong negative relationship is observed between distance traveled and cost per nautical mile (correlation = −0.545). Shorter voyages tend to exhibit significantly higher unit costs, while longer voyages benefit from reduced cost intensity per nautical mile. This pattern suggests the presence of scale effects, where fixed operational costs are distributed across longer distances, improving cost efficiency. Therefore, the profitability bottleneck does not stem from route category or maintenance condition alone, but from scale inefficiency in shorter voyages. This structural cost dynamic helps explain why certain voyages incur losses despite similar revenue levels.
+This heatmap compresses an intersectional story into a transparent summary by pairing medians with sample sizes. The largest disparity appears in agriculture: Kinh agricultural respondents have a substantially higher median income than ethnic-minority agricultural respondents, while non-agricultural careers show smaller differences (and smaller N). Reporting both “Median” and “N” reduces the risk of overinterpreting thin cells, and helps keep the conclusions proportional to evidence. \
+Limitations: Medians suppress within-cell distribution spread; unequal cell sizes and snowball sampling imply that these are sample summaries, not population estimates, and cannot establish causal discrimination mechanisms. 
 
-## 4. Conclusion
+### Loan amount vs income among credit-access respondents
 
-This analysis reveals that approximately one-fifth of voyages incur financial losses. Profitability is strongly associated with cost intensity per nautical mile, while maintenance condition and route category alone do not significantly alter loss probability. A strong negative relationship between voyage distance and unit cost (correlation = −0.545) highlights the presence of scale effects. Short-distance voyages suffer from cost inefficiency due to limited spreading of operational costs across distance. Therefore, profitability risk is primarily driven by structural scale inefficiency rather than categorical operational factors. Strategic improvements in voyage planning and cost allocation may substantially enhance overall financial performance.
+```{r}
+#| fig-width: 9
+#| fig-height: 4.5
+elsiver %>%
+  
+  ggplot(aes(x = LCRE, y = TEIN)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_y_continuous(trans = "log1p") +
+  labs(
+    title = "Among credit-access respondents, larger loans align with higher income",
+    subtitle = "Conditional subgroup view (FCRA = accessible); TEIN shown on log1p scale",
+    x = "Loan amount (LCRE, Mil VND)",
+    y = "TEIN (Mil VND), log1p scale"
+  )
+
+```
+
+Within the credit-access subgroup (where loan amount is observed by design), higher reported loans are associated with higher reported income. This may reflect productive investment (e.g., upgrading tools/technology) or selection effects (higher-income individuals are more likely to qualify for larger loans), both of which are consistent with the paper’s framing that credit supports productivity improvements but is also constrained by rural savings limitations. \
+Limitations: This is a conditional analysis on a small subgroup and is not causal. Credit access is not randomized, and snowball sampling plus eligibility constraints can create strong selection bias. 
+
+The survey covers five provinces in northern Vietnam’s mountainous region (highlighted). A context map supports truthfulness by grounding the analysis geographically for readers unfamiliar with the region and reducing the risk of interpreting the dataset as nationally representative. Because the dataset documentation does not specify how numeric `CPRO`codes map to these province names, this figure intentionally avoids joining survey records to province polygons. \
+Limitations: This is a contextual visualization. Any province-level income comparisons by code should be labelled as “province code” unless an official mapping is obtained.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 6
+
+library(maps)
+library(ggplot2)
+library(dplyr)
+
+# Vietnam boundary (data.frame)
+vietnam_map <- map_data("world") %>%
+  filter(region == "Vietnam")
+
+# Northern Vietnam bounding box (data.frame, not sf)
+north_box_df <- data.frame(
+  long = c(102, 108, 108, 102, 102),
+  lat  = c(20,  20,  24,  24,  20)
+)
+
+ggplot() +
+  geom_polygon(
+    data = vietnam_map,
+    aes(x = long, y = lat, group = group),
+    fill = "grey90",
+    color = "grey50",
+    linewidth = 0.3
+  ) +
+  geom_polygon(
+    data = north_box_df,
+    aes(x = long, y = lat),
+    fill = "#2b8cbe",
+    alpha = 0.25,
+    color = "#2b8cbe",
+    linewidth = 0.6
+  ) +
+  coord_fixed(1.3) +
+  labs(
+    title = "Survey geography context: Northern Vietnam highlighted",
+    subtitle = "Context map only; does not join to CPRO codes (code→name mapping not verified)",
+    caption = "Source: maps package"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```

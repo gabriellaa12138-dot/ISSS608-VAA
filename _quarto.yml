@@ -17,6 +17,8 @@ website:
       menu:
         - text: "Take-on-Exercise1"
         - href: "Take-on-Exercise1/Take-on-Exercise1.html"
+        - text: "Take-on-Exercise2"
+        - href: "Take-on-Exercise2/Take-on-ex2.html"
       
     right:
       - href: index.qmd
