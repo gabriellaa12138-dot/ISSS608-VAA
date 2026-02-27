@@ -19,7 +19,7 @@ website:
     - text: "Take-on Exercise"
       menu:
         - text: "Take-on-Exercise1"
-        - href: "Hands-on-Exercise1/Take-on-Exercise1.html"
+        - href: "Take-on-Exercise1/Take-on-Exercise1.html"
       
     right:
       - href: index.qmd
