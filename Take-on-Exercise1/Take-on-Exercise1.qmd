@@ -1,5 +1,10 @@
-Truthful, Visually-Driven Survey Analysis
-Income of Rural Informal Labourers in Northern Vietnam
+# Truthful, Visually-Driven Survey Analysis Income of Rural Informal Labourers in Northern Vietnam
+
+## 1. Objective and dataset 
+
+This report delivers 5–10 visually-driven observations from a rural informal labour survey in Northern Vietnam, using static ggplot2 visualizations . The dataset contains 725 rows and 30 variables, and a preliminary audit detects 2 duplicated rows. A key measurement property is validated: wherever all components are present, TEIN = TAIN + TSII + TOIN holds exactly . This supports truthful “income composition” visuals.
+
+### 1.1 Data Preparation
 
 ```{r}
 #| message: false
@@ -21,6 +26,8 @@ dim(elsiver)
 glimpse(elsiver)
 
 ```
+
+Two fully duplicated records are detected. This is small but should be removed to avoid double-counting in subgroup summaries.
 
 ```{r}
 #| message: false
@@ -105,7 +112,6 @@ elsiver <- elsiver %>%
 
     FEDU = factor(FEDU, levels = c(0, 1, 2, 3),
                   labels = c("Primary", "Lower secondary", "Upper secondary", "Other / higher")),
-    FEDU = fct_explicit_na(FEDU, "Missing (FEDU)"),
 
     FVTP = factor(FVTP, levels = c(1, 2), labels = c("Short courses", "Long courses")),
     FVTP = fct_explicit_na(FVTP, "Missing (FVTP)"),
@@ -131,9 +137,7 @@ elsiver <- elsiver %>%
 
 ```
 
-```{nalysis: distributions, composition, interactions, mapped context]}
-
-```
+Missingness is heavily concentrated in housing/loan/savings fields (e.g., LCRE, LSAV, LHO1–LHO4). Importantly, housing indicators behave like a **one-choice encoding**: most respondents have **exactly one** of LHO1–LHO4 filled, while others remain NA. This is **structural missingness**, not “non-response”.Treating these NAs as “missing at random” and applying `drop_na()` would bias the sample and distort subgroup comparisons.
 
 ```{r}
 #| fig-width: 10
@@ -168,6 +172,10 @@ ggplot(miss_plot_df, aes(x = var, y = missing_pct)) +
   )
 
 ```
+
+### Figure 2 — Total income (TEIN) distribution (P99 zoom + log1p view)
+
+TEIN is heavily right-skewed: most observations cluster at low-to-moderate income, while a small number of high-income cases generate a long tail. This makes “average income” an unstable summary; median and distribution-aware plots are more truthful than a single mean. The paired panels follow best-practice guidance: the left panel is a zoomed view to show the bulk distribution ; the right panel uses log1p to show tail structure
 
 ```{r}
 #| fig-width: 10
@@ -204,8 +212,7 @@ p_lin + p_log
 
 ```
 
-TEIN is heavily right-skewed: most observations cluster at low-to-moderate income, while a small number of high-income cases generate a long tail. This makes “average income” an unstable summary; median and distribution-aware plots are more truthful than a single mean. The paired panels follow best-practice guidance: the left panel is a zoomed view (explicitly labelled) to show the bulk distribution without misleading truncation; the right panel uses log1p to show tail structure while keeping zero incomes defined.\
-Limitations: Income is self-reported and sampling is snowball-based; extreme values may reflect genuine heterogeneity or network overrepresentation, so they should be interpreted cautiously.
+\
 
 ### Income by education using a raincloud design
 
@@ -253,8 +260,9 @@ ggplot(df, aes(y = FEDU, x = TEIN, fill = FEDU)) +
   theme(legend.position = "none")
 ```
 
-Income rises with education in both central tendency and upper-tail reach: higher education groups show higher medians and progressively wider distributions. Crucially, the distribution shapes matter: the most educated group is small and has a dramatically longer tail, implying large heterogeneity and making mean-based comparisons fragile. This aligns with the paper’s narrative that higher education does not guarantee strictly higher *minimum* income, but is associated with much higher *maximum* income potential. \
-Limitations: Education is not randomly assigned; snowball sampling and local labour-market structure may confound education with access to non-agricultural jobs, training, and networks, so the plot is descriptive rather than causal.
+Income rises with education in both central tendency and upper-tail reach: higher education groups show higher medians and progressively wider distributions. Crucially, the distribution shapes matter: the most educated group is small and has a dramatically longer tail. Higher education does not guarantee strictly higher *minimum* income, but is associated with much higher *maximum* income potential. 
+
+Education is not only associated with higher income; it may also act as a gateway to **non-farm income sources**, which can be tested using the TEIN decomposition.
 
 ### Income by career with ridgelines, stratified by race
 
