@@ -1,3 +1,6 @@
+Truthful, Visually-Driven Survey Analysis
+Income of Rural Informal Labourers in Northern Vietnam
+
 ```{r}
 #| message: false
 #| warning: false
