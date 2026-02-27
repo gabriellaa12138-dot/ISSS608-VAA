@@ -18,8 +18,6 @@ pacman::p_load(
 )
 
 set.seed(1234)
-
-# Required variable name per prompt
 elsiver <- read_csv("data/Upload for elsiver.csv", show_col_types = FALSE)
 
 dim(elsiver)
@@ -32,11 +30,9 @@ Two fully duplicated records are detected. This is small but should be removed t
 ```{r}
 #| message: false
 #| warning: false
-# Duplicate rows
 dup_n <- sum(duplicated(elsiver))
 dup_n
 
-# Missingness (counts and %)
 miss_tbl <- elsiver %>%
   summarise(across(everything(), ~ sum(is.na(.)))) %>%
   pivot_longer(everything(), names_to = "var", values_to = "missing_n") %>%
@@ -62,7 +58,7 @@ miss_tbl %>% slice_head(n = 12)
 ```{r}
 #| message: false
 #| warning: false
-# TEIN consistency check: TEIN == TAIN + TSII + TOIN wherever all are present
+# TEIN == TAIN + TSII + TOIN 
 tein_check <- elsiver %>%
   filter(!is.na(TEIN), !is.na(TAIN), !is.na(TSII), !is.na(TOIN)) %>%
   mutate(diff = TEIN - (TAIN + TSII + TOIN))
@@ -81,16 +77,15 @@ tein_check %>%
 #| warning: false
 elsiver <- elsiver %>%
   mutate(
-    # Fix known parsing issues / out-of-range anomalies
-    ARO4 = if_else(ARO4 == "`", NA_character_, as.character(ARO4)),
+    ARO4 = if_else(ARO4 == "`",NA_character_, as.character(ARO4)),
     ARO4 = readr::parse_number(ARO4),
     ARO2 = as.numeric(ARO2),
-    ARO2 = if_else(ARO2 %in% c(1, 2, 3), ARO2, NA_real_),  # assumption: valid range is 1–3 here
+    ARO2 = if_else(ARO2 %in% c(1,2,3), ARO2, NA_real_),  # assumption: valid range is 1–3 here
 
-    PPO1 = if_else(PPO1 == 0, NA_real_, PPO1),
+    PPO1 = if_else(PPO1 == 0,NA_real_, PPO1),
     PPO2 = if_else(PPO2 == 0, NA_real_, PPO2),
 
-    # Impute TSII missing as 0 only when TEIN == TAIN + TOIN (arithmetically implied)
+
     TSII = case_when(
       is.na(TSII) &
         !is.na(TEIN) & !is.na(TAIN) & !is.na(TOIN) &
@@ -98,7 +93,7 @@ elsiver <- elsiver %>%
       TRUE ~ TSII
     ),
 
-    # Derived, analysis-friendly variables
+    
     CPRO = factor(CPRO, levels = 1:5, labels = paste("Province code", 1:5)),
 
     CGEN = factor(CGEN, levels = c(1, 2), labels = c("Male", "Female")),
@@ -121,7 +116,6 @@ elsiver <- elsiver %>%
     FTAP = factor(FTAP, levels = c(1, 2), labels = c("Low technique", "Adequate technique")),
     FTAP = fct_explicit_na(FTAP, "Missing (FTAP)"),
 
-    # Housing type derived from one-hot indicators
     house_type = case_when(
       LHO1 == 1 ~ "Cottage house",
       LHO2 == 1 ~ "Roofed house",
@@ -130,13 +124,17 @@ elsiver <- elsiver %>%
       TRUE ~ "Missing/Unknown"
     ) %>% factor(levels = c("Cottage house", "Roofed house", "Solid house", "Building", "Missing/Unknown")),
 
-    # log1p for skewed income (keeps zeros defined)
+    # log1p for skewed income
     log1p_TEIN = log1p(TEIN)
   )
 
 ```
 
-Missingness is heavily concentrated in housing/loan/savings fields (e.g., LCRE, LSAV, LHO1–LHO4). Importantly, housing indicators behave like a **one-choice encoding**: most respondents have **exactly one** of LHO1–LHO4 filled, while others remain NA. This is **structural missingness**, not “non-response”.Treating these NAs as “missing at random” and applying `drop_na()` would bias the sample and distort subgroup comparisons.
+Missingness is heavily concentrated in living-condition variables (LCRE, LHO1–LHO4, LSAV), with some exceeding 70–90% missingness.However, housing variables behave like one-choice encoding (one of four filled), indicating structural missingness, not random non-response.
+
+Additionally, income identity holds exactly:
+
+TEIN = TAIN + TSII + TOIN (validated on 719 complete cases)
 
 ```{r}
 #| fig-width: 10
@@ -172,9 +170,11 @@ ggplot(miss_plot_df, aes(x = var, y = missing_pct)) +
 
 ```
 
-### Figure 2 — Total income (TEIN) distribution (P99 zoom + log1p view)
+## 2.Data Analyse
 
-TEIN is heavily right-skewed: most observations cluster at low-to-moderate income, while a small number of high-income cases generate a long tail. This makes “average income” an unstable summary; median and distribution-aware plots are more truthful than a single mean. The paired panels follow best-practice guidance: the left panel is a zoomed view to show the bulk distribution ; the right panel uses log1p to show tail structure
+#### Figure 1 — Total income (TEIN) distribution (P99 zoom + log1p view)
+
+TEIN is heavily right-skewed: most observations cluster at low-to-moderate income, while a small number of high-income cases generate a long upper tail. Mean income would exaggerate typical earnings. The paired panels follow best-practice guidance: the left panel is a zoomed view to show the bulk distribution ; the right panel uses log1p to show tail structure
 
 ```{r}
 #| fig-width: 10
@@ -211,9 +211,9 @@ p_lin + p_log
 
 ```
 
-\
+###  2.1 Education as Primary Income Gradient
 
-### Income by education using a raincloud design
+#### Figure 2: Raincloud by FEDU
 
 ```{r}
 library(dplyr)
@@ -221,7 +221,7 @@ library(forcats)
 library(ggplot2)
 library(ggdist)
 
-# CORRECTED raincloud plot code
+
 df <- elsiver %>%
   filter(!is.na(TEIN), !is.na(FEDU)) 
 
@@ -252,11 +252,13 @@ ggplot(df, aes(y = FEDU, x = TEIN, fill = FEDU)) +
   theme(legend.position = "none")
 ```
 
-Income rises with education in both central tendency and upper-tail reach: higher education groups show higher medians and progressively wider distributions. Crucially, the distribution shapes matter: the most educated group is small and has a dramatically longer tail. Higher education does not guarantee strictly higher *minimum* income, but is associated with much higher *maximum* income potential. 
+Income rises with education in both central tendency and upper-tail reach: higher education groups show higher medians and progressively wider distributions. Importantly, higher education does not guarantee higher minimum income, but increases maximum potential.
 
-Education is not only associated with higher income; it may also act as a gateway to **non-farm income sources**, which can be tested using the TEIN decomposition.
+Education is may not only associated with higher income; it may also act as a gateway to non-farm income sources, which can be tested using the TEIN decomposition.
 
-### Income by career with ridgelines, stratified by race
+### 2.2 Occupational Structure and Race Stratification
+
+#### Figure 3: Ridgeline by CJOB × CRAC
 
 ```{r}
 #| out-width: "100%"
@@ -289,10 +291,11 @@ ggplot(plot_df, aes(x = log1p_TEIN)) +
   theme(legend.position = "none")
 ```
 
-Across both race strata, agriculture has the lowest income distribution, while service/industrial and other careers shift upward. However, stratifying by race reveals a crucial inequality pattern: in agriculture, the ethnic-minority distribution is noticeably left-shifted relative to Kinh, indicating lower typical income among minority agricultural workers. This intersectional view is more truthful than a single “race gap” or “career gap” because it shows *where* disparities concentrate. \
-Limitations: Density estimation can smooth away micro-structure, and snowball sampling may cluster respondents within ethnic and occupational networks. Therefore, the plot should be framed as exploratory evidence, not a population estimate.
+Across both race strata, agriculture has the lowest income distribution, while service/industrial and other careers shift upward. However, Grouped by race reveals a crucial inequality pattern: in agriculture, the ethnic-minority distribution is noticeably left-shifted relative to Kinh, indicating lower typical income among minority agricultural workers.
 
-### Median income composition by education using a waterfall design
+### 2.3 Mechanism: Income Composition Shift
+
+#### Figure 4: Waterfall by education
 
 ```{r}
 #| fig-width: 11
@@ -339,10 +342,19 @@ ggplot(comp_med, aes(y = component, x = value)) +
 
 ```
 
-Education is not only associated with higher total income; it is associated with a different *composition* of income. At primary and lower-secondary levels, median income is dominated by agricultural income (TAIN), with minimal service/industrial contribution. As education increases, non-agricultural components (TSII and TOIN) become much larger in the median composition, consistent with a broader opportunity set beyond agriculture. Because the dataset satisfies TEIN = TAIN + TSII + TOIN exactly (where complete), a waterfall is a truthful decomposition rather than an illustrative approximation. \
-Limitations: This is a median-based decomposition (not a population budget). The highest education group has small N, and snowball sampling limits external generalization. 
+Education does not only increase total income — it changes income structure :
 
-### Race × career interaction as an annotated heatmap
+-   Primary/Lower secondary: median income dominated by agricultural income.
+
+-   Higher education: non-farm components (TSII, TOIN) increase substantially.
+
+This provides a mechanism:
+
+Education → Access to non-farm activities → Diversified income → Higher TEIN
+
+### 2.4 Intersectional Inequality
+
+#### Figure 5: Race × Career Heatmap
 
 ```{r}
 #| fig-width: 9
@@ -368,10 +380,11 @@ ggplot(heat_df, aes(x = CJOB, y = CRAC, fill = tein_med)) +
 
 ```
 
-This heatmap compresses an intersectional story into a transparent summary by pairing medians with sample sizes. The largest disparity appears in agriculture: Kinh agricultural respondents have a substantially higher median income than ethnic-minority agricultural respondents, while non-agricultural careers show smaller differences (and smaller N). Reporting both “Median” and “N” reduces the risk of overinterpreting thin cells, and helps keep the conclusions proportional to evidence. \
-Limitations: Medians suppress within-cell distribution spread; unequal cell sizes and snowball sampling imply that these are sample summaries, not population estimates, and cannot establish causal discrimination mechanisms. 
+Largest disparity occurs in agriculture. Kinh agricultural respondents have significantly higher median income than ethnic minorities. Non-agricultural cells show smaller differences but also smaller N. Race gap is structurally embedded in agricultural sector.
 
-### Loan amount vs income among credit-access respondents
+### 2.5 Credit and Income 
+
+### Figure 6: Loan amount vs income among credit-access respondents
 
 ```{r}
 #| fig-width: 9
@@ -391,56 +404,12 @@ elsiver %>%
 
 ```
 
-Within the credit-access subgroup (where loan amount is observed by design), higher reported loans are associated with higher reported income. This may reflect productive investment (e.g., upgrading tools/technology) or selection effects (higher-income individuals are more likely to qualify for larger loans), both of which are consistent with the paper’s framing that credit supports productivity improvements but is also constrained by rural savings limitations. \
-Limitations: This is a conditional analysis on a small subgroup and is not causal. Credit access is not randomized, and snowball sampling plus eligibility constraints can create strong selection bias. 
+Within the credit-access subgroup (where loan amount is observed by design), higher reported loans are associated with higher reported income. This may reflect productive investment (e.g., upgrading tools/technology) or selection effects (higher-income individuals are more likely to qualify for larger loans), both of which are consistent with the paper’s framing that credit supports productivity improvements but is also constrained by rural savings limitations.
 
-The survey covers five provinces in northern Vietnam’s mountainous region (highlighted). A context map supports truthfulness by grounding the analysis geographically for readers unfamiliar with the region and reducing the risk of interpreting the dataset as nationally representative. Because the dataset documentation does not specify how numeric `CPRO`codes map to these province names, this figure intentionally avoids joining survey records to province polygons. \
-Limitations: This is a contextual visualization. Any province-level income comparisons by code should be labelled as “province code” unless an official mapping is obtained.
+## 3.Conclusion
 
-```{r}
-#| fig-width: 9
-#| fig-height: 6
+This analysis demonstrates that income inequality among rural informal labourers is structurally patterned rather than random.
 
-library(maps)
-library(ggplot2)
-library(dplyr)
+First, income is highly right-skewed, making median-based and distribution-first visualisation essential for truthful interpretation. Second, Higher education is associated not only with higher total income but also with a shift from agricultural to non-farm income sources.Third, occupation plays a critical role. Agriculture consistently exhibits the lowest income distribution. Race disparities are concentrated within the agricultural sector. Finally, credit access is positively associated with income.
 
-# Vietnam boundary (data.frame)
-vietnam_map <- map_data("world") %>%
-  filter(region == "Vietnam")
-
-# Northern Vietnam bounding box (data.frame, not sf)
-north_box_df <- data.frame(
-  long = c(102, 108, 108, 102, 102),
-  lat  = c(20,  20,  24,  24,  20)
-)
-
-ggplot() +
-  geom_polygon(
-    data = vietnam_map,
-    aes(x = long, y = lat, group = group),
-    fill = "grey90",
-    color = "grey50",
-    linewidth = 0.3
-  ) +
-  geom_polygon(
-    data = north_box_df,
-    aes(x = long, y = lat),
-    fill = "#2b8cbe",
-    alpha = 0.25,
-    color = "#2b8cbe",
-    linewidth = 0.6
-  ) +
-  coord_fixed(1.3) +
-  labs(
-    title = "Survey geography context: Northern Vietnam highlighted",
-    subtitle = "Context map only; does not join to CPRO codes (code→name mapping not verified)",
-    caption = "Source: maps package"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    legend.position = "none",
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-```
+Overall, the findings suggest that policies aimed at improving educational attainment and facilitating transitions into non-agricultural activities may have the greatest potential to reduce income inequality in rural northern Vietnam.
