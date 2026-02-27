@@ -2,7 +2,7 @@
 
 ## 1. Objective and dataset 
 
-This report delivers 5–10 visually-driven observations from a rural informal labour survey in Northern Vietnam, using static ggplot2 visualizations . The dataset contains 725 rows and 30 variables, and a preliminary audit detects 2 duplicated rows. A key measurement property is validated: wherever all components are present, TEIN = TAIN + TSII + TOIN holds exactly . This supports truthful “income composition” visuals.
+This report delivers 5–10 visually-driven observations from a rural informal labour survey in Northern Vietnam, using static ggplot2 visualizations . The dataset contains 725 rows and 30 variables, and a preliminary audit detects 2 duplicated rows. A key measurement property is validated: wherever all components are present, TEIN = TAIN + TSII + TOIN holds exactly . This su›pports truthful “income composition” visuals.
 
 ### 1.1 Data Preparation
 
@@ -112,7 +112,6 @@ elsiver <- elsiver %>%
 
     FEDU = factor(FEDU, levels = c(0, 1, 2, 3),
                   labels = c("Primary", "Lower secondary", "Upper secondary", "Other / higher")),
-
     FVTP = factor(FVTP, levels = c(1, 2), labels = c("Short courses", "Long courses")),
     FVTP = fct_explicit_na(FVTP, "Missing (FVTP)"),
 
@@ -222,16 +221,9 @@ library(forcats)
 library(ggplot2)
 library(ggdist)
 
+# CORRECTED raincloud plot code
 df <- elsiver %>%
-  mutate(
-    FEDU = factor(
-      FEDU,
-      levels = c(0, 1, 2, 3),
-      labels = c("Primary", "Lower secondary", "Upper secondary", "Other / higher")
-    )
-  ) %>%
-  filter(!is.na(TEIN), !is.na(FEDU))
-
+  filter(!is.na(TEIN), !is.na(FEDU)) 
 
 p99 <- quantile(df$TEIN, 0.99, na.rm = TRUE)
 
