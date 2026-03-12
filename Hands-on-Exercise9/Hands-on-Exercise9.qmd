@@ -1,0 +1,361 @@
+---
+title: "Hands-on-Exercise9"
+---
+
+# **27  Chapter 27: Modelling, Visualising and Analysing Network Data with R**
+
+## 1. Overview
+
+This hands-on exercise focuses on modelling and analysing organisational email communication as a directed network. In this network, employees are represented as nodes and email exchanges are represented as edges. The workflow covers data import, data wrangling, graph construction, static network visualisation, faceted comparison, network metric computation, community detection and interactive exploration. This progression is appropriate because it moves from raw transactional records to interpretable network structures and finally to higher-level analytical insights.
+
+## 2. Getting Started
+
+```{r}
+pacman::p_load(igraph, tidygraph, ggraph,
+               visNetwork, lubridate, clock,
+               tidyverse, graphlayouts,
+               concaveman, ggforce)
+```
+
+```{r}
+GAStech_nodes <- read_csv("data/GAStech_email_node.csv")
+GAStech_edges <- read_csv("data/GAStech_email_edge-v2.csv")
+glimpse(GAStech_edges)
+```
+
+The output reveals that sentDate has been imported as character rather than date, which would prevent meaningful time-based transformation and comparison. Identifying this issue early improves the reliability of all subsequent steps.
+
+## 3.Wrangling time
+
+```{r}
+GAStech_edges <- GAStech_edges %>%
+  mutate(SendDate = dmy(SentDate)) %>%
+  mutate(Weekday = wday(SentDate,
+                        label = TRUE,
+                        abbr = FALSE))
+```
+
+This transformation standardises the date field and derives a weekday attribute for later comparison. Converting the date field into proper date format is necessary for robust temporal analysis, while the weekday variable enables the analyst to compare communication patterns across days of the week. This is analytically useful because organisational email behaviour is often structured by work routines.
+
+## 4.Aggregating the edges
+
+```{r}
+GAStech_edges_aggregated <- GAStech_edges %>%
+  filter(MainSubject == "Work related") %>%
+  group_by(source, target, Weekday) %>%
+  summarise(Weight = n(), .groups = "drop") %>%
+  filter(source != target) %>%
+  filter(Weight > 1)
+```
+
+network visualisation requires relational summaries rather than raw transactional records. By aggregating emails by sender, receiver and weekday, the analysis converts repeated message exchanges into weighted communication ties.
+
+## 5.Creating network objects using tidygraph
+
+```{r}
+GAStech_graph <- tbl_graph(nodes = GAStech_nodes,
+                           edges = GAStech_edges_aggregated,
+                           directed = TRUE)
+```
+
+The tbl_function constructs a formal network object by linking the node table and the aggregated edge table. Setting the graph as directed is conceptually correct because email communication has a clear sender-receiver direction.
+
+```{r}
+GAStech_graph
+```
+
+The graph summary confirms that the communication network is directed and connected.
+
+## 6.Changing the active object
+
+```{r}
+GAStech_graph %>%
+  activate(edges) %>%
+  arrange(desc(Weight))
+```
+
+## 7.Plotting network graph
+
+```{r}
+g <- ggraph(GAStech_graph,
+            layout = "fr") +
+  geom_edge_link(aes()) +
+  geom_node_point(aes())
+
+g + theme_graph()
+
+g <- ggraph(GAStech_graph,
+            layout = "nicely") +
+  geom_edge_link(aes()) +
+  geom_node_point(aes(colour = Department,
+                      size = 3))
+
+g + theme_graph()
+g <- ggraph(GAStech_graph,
+            layout = "nicely") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department),
+                  size = 3)
+
+g + theme_graph()
+
+```
+
+## 8.Creating facet graphs by weekday
+
+```{r}
+set_graph_style()
+
+g <- ggraph(GAStech_graph,
+            layout = "nicely") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department),
+                  size = 2) +
+  theme(legend.position = 'bottom')
+
+g + facet_edges(~Weekday)
+set_graph_style()
+
+g <- ggraph(GAStech_graph,
+            layout = "nicely") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department),
+                  size = 2)
+
+g + facet_edges(~Weekday) +
+  th_foreground(foreground = "grey80",
+                border = TRUE) +
+  theme(legend.position = 'bottom')
+```
+
+Faceting by weekday converts one dense network into a series of smaller comparable views. This reduces clutter and makes temporal variation visible.
+
+## 9.Faceting by department
+
+```{r}
+set_graph_style()
+g <- ggraph(GAStech_graph,
+            layout = "nicely") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department),
+                  size = 2)
+
+g + facet_nodes(~Department) +
+  th_foreground(foreground = "grey80",
+                border = TRUE) +
+  theme(legend.position = 'bottom')
+```
+
+## 10.Computing centrality indices
+
+```{r}
+g <- GAStech_graph %>%
+  mutate(betweenness_centrality = centrality_betweenness()) %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department,
+                      size = betweenness_centrality))
+g + theme_graph()
+g <- GAStech_graph %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department,
+                      size = centrality_betweenness()))
+g + theme_graph()
+```
+
+it identifies employees that connect otherwise separate parts of the communication network. These actors may play brokerage or coordination roles within the organisation. Mapping betweenness to node size improves analytical depth because it goes beyond simple frequency counts and highlights structural importance.
+
+## 11.Visualising community
+
+```{r}
+g <- GAStech_graph %>%
+  mutate(community = as.factor(
+    group_edge_betweenness(
+      weights = Weight,
+      directed = TRUE))) %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = community))
+
+g + theme_graph()
+
+g <- GAStech_graph %>%
+  activate(nodes) %>%
+  mutate(community = as.factor(
+    group_optimal(weights = Weight)),
+         betweenness_measure = centrality_betweenness()) %>%
+  ggraph(layout = "fr") +
+  geom_mark_hull(
+    aes(x, y,
+        group = community,
+        fill = community),
+    alpha = 0.2,
+    expand = unit(0.3, "cm"),
+    radius = unit(0.3, "cm")
+  ) +
+  geom_edge_link(aes(width = Weight),
+                 alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(fill = Department,
+                      size = betweenness_measure),
+                  color = "black",
+                  shape = 21)
+g + theme_graph()
+```
+
+Community detection is used to identify groups of employees who are more densely connected to one another than to the rest of the network.
+
+## 12.Interactive network graph
+
+preparation
+
+```{r}
+GAStech_edges_aggregated <- GAStech_edges %>%
+  left_join(
+    GAStech_nodes %>% select(label, id),
+    by = c("sourceLabel" = "label")
+  ) %>%
+  rename(from = id) %>%
+  left_join(
+    GAStech_nodes %>% select(label, id),
+    by = c("targetLabel" = "label")
+  ) %>%
+  rename(to = id) %>%
+  filter(MainSubject == "Work related") %>%
+  group_by(from, to) %>%
+  summarise(weight = n(), .groups = "drop") %>%
+  filter(from != to, weight > 1)
+```
+
+```{r}
+visNetwork(GAStech_nodes,
+           GAStech_edges_aggregated)
+```
+
+Using a force-directed layout in the interactive graph improves structural readability by bringing connected nodes closer together. 
+
+```{r}
+visNetwork(GAStech_nodes,
+           GAStech_edges_aggregated) %>%
+  visIgraphLayout(layout = "layout_with_fr")
+```
+
+## 13.Interactive nodes by group
+
+```{r}
+GAStech_nodes <- GAStech_nodes %>%
+  rename(group = Department)
+visNetwork(GAStech_nodes,
+           GAStech_edges_aggregated) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+
+## 14.Interactivity features
+
+```{r}
+visNetwork(GAStech_nodes,
+           GAStech_edges_aggregated) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+This step adds interactive features:
+
+highlightNearest = TRUE: Highlight nearby nodes when clicking on a node
+
+nodesIdSelection = TRUE: You can use the drop-down box to select nodes
+
+## Extra 1: Compare multiple layouts
+
+```{r}
+ggraph(GAStech_graph, layout = "fr") +
+  geom_edge_link(alpha = 0.15) +
+  geom_node_point(aes(colour = Department), size = 3) +
+  theme_graph()
+
+ggraph(GAStech_graph, layout = "kk") +
+  geom_edge_link(alpha = 0.15) +
+  geom_node_point(aes(colour = Department), size = 3) +
+  theme_graph()
+```
+
+Comparing multiple layouts is a valid design alternative because different layout algorithms reveal different structural properties.
+
+## Extra 2: Use degree centrality instead of betweenness
+
+```{r}
+GAStech_graph %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(width = Weight), alpha = 0.2) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = Department,
+                      size = centrality_degree(mode = "all"))) +
+  theme_graph()
+```
+
+Degree centrality complements betweenness centrality by capturing direct connectedness rather than brokerage.
+
+## Extra 3: Use closeness centrality
+
+```{r}
+GAStech_graph %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(alpha = 0.15) +
+  geom_node_point(aes(colour = Department,
+                      size = centrality_closeness())) +
+  theme_graph()
+```
+
+Closeness centrality highlights actors that are structurally near to many others, which can be interpreted as actors with relatively efficient access to the wider network. 
+
+## Extra 4: Label the most central actors
+
+```{r}
+GAStech_graph %>%
+  activate(nodes) %>%
+  mutate(bet = centrality_betweenness()) %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(alpha = 0.15) +
+  geom_node_point(aes(size = bet, colour = Department)) +
+  geom_node_text(aes(label = ifelse(bet > quantile(bet, 0.9), label, "")),
+                 repel = TRUE, size = 3) +
+  theme_graph()
+```
+
+Labelling only the top central nodes supports interpretation without overwhelming the plot with text. 
+
+## Extra 5: Improve the interactive graph with directional emphasis
+
+making direction explicit and strengthening node-level exploration
+
+```{r}
+visNetwork(GAStech_nodes, GAStech_edges_aggregated) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visEdges(arrows = "to",
+           smooth = list(enabled = TRUE, type = "curvedCW")) %>%
+  visOptions(highlightNearest = list(enabled = TRUE, hover = TRUE),
+             nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
