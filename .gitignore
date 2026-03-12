@@ -7,3 +7,5 @@
 
 /.quarto/
 **/*.quarto_ipynb
+Take-on-Exercise2/data/transactions_data.csv
+Take-on-Exercise2/data/customer_data.csv
