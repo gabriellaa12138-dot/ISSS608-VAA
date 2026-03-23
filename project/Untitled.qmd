@@ -1,0 +1,15 @@
+---
+title: "Project Minutes"
+author: "Jimmy, He Xiaoyi, Zhou Ziying"
+date: "2026-03-10"
+date-modified: "2026-03-10"
+toc: true
+---
+
+# Minutes of Team Progress
+
+## <a href="docs/meeting1.docx" target="_blank">#1 Meeting Minutes</a>
+
+## <a href="docs/meeting2.docx" target="_blank">#2 Meeting Minutes</a>
+
+## <a href="docs/meeting3.docx" target="_blank">#3 Meeting Minutes</a>
